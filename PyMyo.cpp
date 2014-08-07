@@ -6,44 +6,57 @@
 // Fabricate.IO
 #include <iostream>
 #include <thread>
+#include <mutex>
+#include <myo/myo.hpp>
 
 // Indicates the Myo is not on an arm
 #define OFF_ARM 'A'
+
+// Timeout to raise exception if no myo found
 #define FIND_MYO_TIMEOUT_MS 10000
+
+// Update loop period - 50ms = 20Hz
 #define UPDATE_EVENT_PD_MS 50
 
-// The only file that needs to be included to use the Myo C++ SDK is myo.hpp.
-#include <myo/myo.hpp>
+// Sizes of rotation & accel arrays
+#define QUAT_ARR_SZ 4
+#define ACCEL_ARR_SZ 3
 
-// Classes that inherit from myo::DeviceListener can be used to receive events from Myo devices. DeviceListener
-// provides several virtual functions for handling different kinds of events. If you do not override an event, the
-// default behavior is to do nothing.
+// Receives events from Myo devices
 class DataCollector : public myo::DeviceListener {
 private:
-	// These values are set by onArmRecognized() and onArmLost() above.
+	// Variables to hold current Myo state
     bool onArm;
     myo::Arm whichArm;
-
-    // These values are set by onOrientationData() and onPose() above.
-    int roll_w, pitch_w, yaw_w;
     myo::Pose currentPose;
 
-	//stores w, x, y, and z rotation
-	float quat_arr[4];
+	float quat_arr[QUAT_ARR_SZ]; //stores w, x, y, and z rotation
+	float accel_arr[ACCEL_ARR_SZ];
 
-	float accel_arr[3];
 	myo::Myo* myMyo;
+	std::mutex myoMutex; // Prevents vibration while polling for data
 
 public:
-    DataCollector()
-    : onArm(false), roll_w(0), pitch_w(0), yaw_w(0), currentPose() {
-		for(int i = 0;i< sizeof quat_arr;i++) {
+    DataCollector() : onArm(false), currentPose() {
+		for(int i = 0; i < QUAT_ARR_SZ; i++) {
 			quat_arr[i] = 0.0;
+		}
+		for(int i = 0; i < ACCEL_ARR_SZ; i++) {
+			accel_arr[i] = 0.0;
 		}
     }
 
+	// This is used later by the vibrator
 	void setMyo(myo::Myo* myo) {
 		myMyo = myo;
+	}
+
+	void setLock(bool lock) {
+		if (lock) {
+			myoMutex.lock();
+		} else {
+			myoMutex.unlock();
+		}
 	}
 
     // Called whenever the Myo device provides its current orientation, which is represented
@@ -83,25 +96,22 @@ public:
 	}
 
 	// Vibrates the Myo
-	void vibrate(int duration) {
-		switch (duration) {
-			case 1:               
-				myMyo->vibrate(myo::Myo::vibrationShort);
-				break;
-			case 2:               
-				myMyo->vibrate(myo::Myo::vibrationMedium);
-				break;
-			case 3:               
-				myMyo->vibrate(myo::Myo::vibrationLong);
-				break;
+	void vibrate(myo::Myo::VibrationType duration) {
+		if (!myMyo) {
+			std::cerr << "Myo not set!";
+			exit(2);
 		}
+
+		myoMutex.lock();
+		myMyo->vibrate(duration);
+		myoMutex.unlock();
 	}
 
     // Prints the current values that were updated by the on...() functions above.
     void print() {
 
 		// Prints x, y, and z acceleration of the Myo
-		for(int i = 0;i< (sizeof(accel_arr)/sizeof(*accel_arr));i++) {	
+		for(int i = 0; i < ACCEL_ARR_SZ; i++) {	
 			char* bits = reinterpret_cast<char*>(&accel_arr[i]);
 			for(int n = 0; n < sizeof(float); ++n) {
 				std::cout << (bits[n]);
@@ -109,7 +119,7 @@ public:
 		}
 
 		// Prints w, x, y, and z rotation of the Myo
-		for(int i = 0;i< (sizeof(quat_arr)/sizeof(*quat_arr));i++) {
+		for(int i = 0; i < QUAT_ARR_SZ; i++) {
 			char* bits = reinterpret_cast<char*>(&quat_arr[i]);
 			for(int n = 0; n < sizeof(float); ++n) {
 				std::cout << (bits[n]);
@@ -129,82 +139,45 @@ public:
 		}
 
         std::cout << '\n';
-        std::cout << std::flush;
+        std::cout << std::flush; // Prevent caching multiple lines so each line is written immediately
     }
-
-
 };
-
-
-bool collectorInputBool;
-std::string input;
 DataCollector collector;
 
-void inputThread()
-{
-	collectorInputBool = false;
-	while(true)
-	{
+// Reads integer values from the console to control vibration
+void inputThread() {
+    std::string input;
+	while(true) {
 		std::cin >> input;
-		if(std::cin.fail())
-		{
+		if(std::cin.fail()) {
 			std::exit(0);
 		}
 
-		collectorInputBool = true;
-		if(&collector != NULL)
-		{
-			switch (input[0])
-			{
-				case 'a':               
-					collector.vibrate(1);
-					break;
-				case 'b':               
-					collector.vibrate(2);
-					break;
-				case 'c':               
-					collector.vibrate(3);
-					break;
-				default:
-					collector.vibrate(2);
-					collector.vibrate(2); 
-					collector.vibrate(2);
-					break;
-			}
-		}
-		else
-		{
-			std::cout << "null collector!";
-		}
-		collectorInputBool = false;
+		collector.vibrate((myo::Myo::VibrationType)input[0]);
 	}
 }
 
 int main(int argc, char** argv)
 {
     try {
-
-		collectorInputBool = false;
-		
 		myo::Hub hub("com.fabricate.pyo"); // This provides access to one or more Myos.
 
 		myo::Myo* myo = hub.waitForMyo(FIND_MYO_TIMEOUT_MS);
 		if (!myo) {
 			throw std::runtime_error("Unable to find a Myo!");
 		}
-		collector.setMyo(myo);
+		collector.setMyo(myo);	     // Used as a reference for vibration
 		hub.addListener(&collector); // Tell the hub to send data events to the collector
 
 		// This thread reads vibration commands
 		std::thread t1 (inputThread);
 		t1.detach();
 
-		while (true) {
-			if(!collectorInputBool)
-			{
-				hub.run(UPDATE_EVENT_PD_MS); // Allow myo to push events at the given rate
-				collector.print();
-			}
+		while (true)  {
+			collector.setLock(true); // Prevent vibration thread from writing while we read
+			hub.run(UPDATE_EVENT_PD_MS); // Allow myo to push events at the given rate
+			collector.setLock(false);
+			collector.print();
 		}
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;

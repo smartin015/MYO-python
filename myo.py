@@ -22,7 +22,7 @@ class Myo:
   
   def processMyo(self, threadName, delay):
     cmd = "PyMyo.exe"
-    self.proc = subprocess.Popen(cmd, bufsize=0, stdout= subprocess.PIPE, stdin= subprocess.PIPE, stderr= subprocess.PIPE, shell=True)
+    self.proc = subprocess.Popen(cmd, bufsize=0, stdout= subprocess.PIPE, stdin= subprocess.PIPE, shell=True)
     self.pose = 255
     while True:
       newdata = self.proc.stdout.readline().strip()
@@ -33,7 +33,7 @@ class Myo:
         self.lastpose = self.pose
         self.pose = my_struct[7]
         if (self.poses[self.pose] == "fist") and (self.poses[self.lastpose] != "fist"):
-          self.proc.stdin.write("b\n")
+          self.proc.stdin.write(chr(1) + "\n")
           self.proc.stdin.flush()
         self.printData()
         #print self.pose
