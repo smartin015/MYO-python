@@ -41,7 +41,6 @@ class Myo(threading.Thread):
   def __init__(self, callback):
     threading.Thread.__init__(self)
     
-    print platform.system()
     self.cmd = self.OSCOMMANDS.get(platform.system())
     
     self.proc = subprocess.Popen(self.cmd, bufsize=0, stdout=subprocess.PIPE, stdin=subprocess.PIPE, shell=True)
