@@ -9,6 +9,7 @@ import sys
 import struct
 import math
 import threading
+import platform
 
 class Myo(threading.Thread):
   """ Wrapper for PyMyo.exe - handles event data via callback, and can vibrate the myo """
@@ -22,13 +23,16 @@ class Myo(threading.Thread):
     5 : "reserved1",
     6 : "thumbToPinky",
   }
-  
+  OSCOMMANDS = {
+    "Darwin" : "./PyMyo",
+    "Windows": "PyMyo.exe",
+  }
   # These durations are specified by Thalmic
   VIBE_LONG = 2
   VIBE_MEDIUM = 1
   VIBE_SHORT = 0
 
-  CMD = "PyMyo.exe"
+  cmd = "nope"
   
   # PyMyo.exe prints a packet (followed by a newline) every time the myo has new event data
   PACKET_LEN = 30
@@ -37,7 +41,10 @@ class Myo(threading.Thread):
   def __init__(self, callback):
     threading.Thread.__init__(self)
     
-    self.proc = subprocess.Popen(Myo.CMD, bufsize=0, stdout=subprocess.PIPE, stdin=subprocess.PIPE, shell=True)
+    print platform.system()
+    self.cmd = self.OSCOMMANDS.get(platform.system())
+    
+    self.proc = subprocess.Popen(self.cmd, bufsize=0, stdout=subprocess.PIPE, stdin=subprocess.PIPE, shell=True)
     
     self.pose = None
     self.quat = None
